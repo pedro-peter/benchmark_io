@@ -133,7 +133,6 @@ install_centos_epel_repo() {
     return 0
 }
 
-
 install_sysbench () {
     # install sysbench package for Ubuntu or Centos distros
 
@@ -281,9 +280,9 @@ run_sysbench () {
 }
 
 #### script starts here ####
-
 init
 
+# parse command line args
 OPTS=$( getopt -o hvw:s:t:d:sc --long help,verbose,work-dir:,file-size:,time:,delay:,skip-cleanup,cleanup \
     -n $SCRIPT_NAME -- "$@" )
 
@@ -309,6 +308,8 @@ while true; do
     * ) break ;;
   esac
 done
+# /parse command line args
+
 if [ -z "$WORK_DIR" ]; then
     log_message error "-w or --work-dir must be set to create sysbench files"
     log_message info "run $SCRIPT_NAME -h for more information"
