@@ -27,7 +27,7 @@ Each benchmark result is logged to --work-dir/[timestamp]_${SCRIPT_NAME}_result.
 
  Options:
   -w, --work-dir      Directory to create sysbench test files (required)
-  -s, --file-size     File size for sysbench files. Default: ${BOLD}2 * system memory${NORMAL}
+  -s, --file-size     File size(in MB) for sysbench files. Default: ${BOLD}2 * system memory${NORMAL}
   -t, --time          Time(in seconds) to run each sysbench test. Default: ${BOLD}300s${NORMAL}
   -d, --delay         Delay(in seconds) between running each sysbench test. Default: ${BOLD}30s${NORMAL}
   -s, --skip-cleanup  Do not run the sysbench cleanup command
@@ -55,10 +55,13 @@ init() {
 log_message() {
     # log message to stdout
     # do not log verbose messages unless VERSBOSE is true
-    # type: error gets logged to stderr(2)
+    # type        : error gets logged to stderr(2)
+    # message     : message to print
+    # no_new_line : if true, do not append \n to message
 
     local type=$1
     local message=$2
+    local no_new_line=$3
 
     # set tty colours for printf
     case $type in
@@ -72,7 +75,10 @@ log_message() {
             colour=$RED
             ;;
     esac
-    full_message="${colour}[$type]${NORMAL} ${message}\n"
+    full_message="${colour}[$type]${NORMAL} ${message}"
+    if [ "$no_new_line" != "true" ]; then
+        full_message="${full_message}\n"
+    fi
 
     if [ "$type" = "error" ]; then
         # log errors to stderr
@@ -172,7 +178,106 @@ install_sysbench () {
 sysbench_cleanup () {
     # run sysbench cleanup command and exit
     log_message info "running sysbench cleanup command"
-    exit 0
+    if [ -z  "$LOG_FILE" ]; then
+        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M cleanup
+        status=$?
+    else
+        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M cleanup >> $LOG_FILE
+        status=$?
+        logged="true"
+    fi
+    if [ $status -ne 0 ]; then
+        log_message error "sysbench cleanup failed"
+        if [ "$logged" = "true" ]; then
+            log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL}"
+        fi
+    fi
+    [ -f $WORK_DIR/sysbench_prepare ] && rm $WORK_DIR/sysbench_prepare
+    return 0
+}
+
+trap_sysbench () {
+    # kill & cleanup sysbench if ctl+c is pressed
+    # pid : pid to kill
+
+    local pid=$1
+
+    kill -9 $pid
+    log_message error "ctrl+c detected.  killing background sysbench process and exiting"
+    sysbench_cleanup
+    exit 1
+}
+
+run_sysbench () {
+    # run sysbench prepare & i/o tests
+
+    log_message info "starting sysbench test"
+    # store current dir to restore after sysbench run
+    pushd $PWD > /dev/null
+    log_message info "creating directory: ${BOLD}$WORK_DIR${NORMAL}"
+    [ -d $WORK_DIR ] || mkdir -p $WORK_DIR
+    cd $WORK_DIR
+    [ -d $WORK_DIR/logs ] || mkdir $WORK_DIR/logs
+
+    # stop sysbench if ctl+c is pressed
+    trap 'trap_sysbench $pid' SIGINT
+    if [ -f $WORK_DIR/sysbench_prepare ]; then
+        log_message info "sysbench prepare has already been run in this directory. skipping prepare"
+        log_message info "use the --cleanup cmd line parameter to remove a sysbench prepare"
+    else
+        log_message info "running sysbench fileio prepare."
+        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M prepare >> $LOG_FILE &
+        pid=$!
+        while [ -n "$(ps -p $pid -o pid=)" ]; do
+            sleep 1
+            dir_size=$( du -sm /tmp/sysbench/ | awk {'print $1'} )
+            log_message info "sysbench ${BOLD}prepare${NORMAL} completed ${YELLOW}[${dir_size}/${SYSBENCH_FILE_SIZE}]${NORMAL}MB\r" true
+        done
+        printf "\n"
+        wait $pid
+        if [ $? -ne 0 ]; then
+            log_message error "sysbench prepare failed"
+            log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL}"
+            exit 1
+        fi
+        log_message info "sysbench prepare complete"
+        # used for tracking the prepare for later runs
+        touch $WORK_DIR/sysbench_prepare
+    fi
+
+    for sysbench_test in rndrw seqwr seqrd;
+        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M  --file-test-mode=${sysbench_test} --time=${SYSBENCH_TIME} run >> $LOG_FILE &
+        pid=$!
+        count=0
+        while [ -n "$(ps -p $pid -o pid=)" ]; do
+            sleep 1
+            count=$((count+1))
+            log_message info "running sysbench ${BOLD}${sysbench_test}${NORMAL} test for ${YELLOW}[${count}/${SYSBENCH_TIME}]${NORMAL}s\r" true
+            #clear current line
+            tput el1
+        done
+        printf "\n"
+        wait $pid
+        if [ $? -ne 0 ]; then
+            log_message error "sysbench ${sysbench_test} test failed"
+            log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL}"
+            exit 1
+        fi
+
+        log_message info "completed sysbench ${sysbench_test} test"
+        log_message info "sleeping for ${SYSBENCH_DELAY}s between tests"
+        # clear ctl+c trap
+        trap - SIGINT
+        sleep ${SYSBENCH_DELAY}
+    done
+
+    if [ "$SYSBENCH_SKIP_CLEANUP" = "true" ]; then
+        sysbench_cleanup
+    fi
+
+    # restore previous dir
+    popd  > /dev/null
+    return 0
 }
 
 #### script starts here ####
@@ -188,13 +293,14 @@ WORK_DIR=
 FILE_SIZE=
 SYSBENCH_TIME=300
 SYSBENCH_DELAY=30
+SYSBENCH_SKIP_CLEANUP=
 
 while true; do
   case "$1" in
     -h | --help ) usage; exit 0 ;;
     -v | --verbose ) VERBOSE=true; shift ;;
     -w | --work-dir ) WORK_DIR="$2"; shift 2 ;;
-    -s | --file-size ) FILE_SIZE="$2"; shift 2 ;;
+    -s | --file-size ) SYSBENCH_FILE_SIZE="$2"; shift 2 ;;
     -t | --time ) SYSBENCH_TIME="$2"; shift 2 ;;
     -d | --delay ) SYSBENCH_DELAY="$2"; shift 2 ;;
     -s | --skip-cleanup) SYSBENCH_SKIP_CLEANUP=true; shift ;;
@@ -212,15 +318,31 @@ log_message info "using: ${BOLD}${WORK_DIR}${NORMAL} to create temp sysbench fil
 
 system_memory=$( free -m | awk '/Mem\:/ { print $2 }' )
 log_message info "system memory is: ${BOLD}${system_memory}MB${NORMAL}"
-if [ -z "$FILE_SIZE" ]; then
+if [ -z "$SYSBENCH_FILE_SIZE" ]; then
     # default to 2 x system memory for sysbench file i/o tests
-    FILE_SIZE="$(($system_memory * 2 ))"
+    SYSBENCH_FILE_SIZE="$(($system_memory * 2 ))"
     append_msg="default"
 else
     append_msg="specified"
 fi
-log_message info "using $append_msg file size: ${BOLD}${FILE_SIZE}MB/$(($FILE_SIZE / 1024))GB${NORMAL} for sysbench I/O tests"
+log_message info "using $append_msg file size: ${BOLD}${SYSBENCH_FILE_SIZE}MB/$(($SYSBENCH_FILE_SIZE / 1024))GB${NORMAL} for sysbench I/O tests"
 log_message info "sysbench recommend using twice the system ram to reduce the effects of linux buffers during I/O tests"
-#TODO check free space(unless already prep'ed)
+
+# check there is enough free space on the disk device
+free_space=$( df -m ${WORK_DIR} --output=avail | tail -1 )
+# trim whitespace
+free_space=$( printf $free_space | awk '{$1=$1};1' )
+log_message info "${BOLD}${free_space}MB${NORMAL} free on disk device"
+if [ "$free_space" -lt "$SYSBENCH_FILE_SIZE" ]; then
+    log_message error "not enough free space on disk device"
+    exit 1
+fi
+
+LOG_FILE="${WORK_DIR}/logs/sysbench_result_$(date +%F_%R).log"
+log_message info "using log file: ${BOLD}$LOG_FILE${NORMAL}"
 
 install_sysbench
+run_sysbench
+log_message info "tests complete!"
+log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL} for results"
+exit 0
