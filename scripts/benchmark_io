@@ -244,7 +244,7 @@ run_sysbench () {
         touch $WORK_DIR/sysbench_prepare
     fi
 
-    for sysbench_test in rndrw seqwr seqrd;
+    for sysbench_test in rndrw seqwr seqrd; do
         sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M  --file-test-mode=${sysbench_test} --time=${SYSBENCH_TIME} run >> $LOG_FILE &
         pid=$!
         count=0
