@@ -176,7 +176,12 @@ install_sysbench () {
 
 sysbench_cleanup () {
     # run sysbench cleanup command and exit
+
     log_message info "running sysbench cleanup command"
+    # store current dir to restore after sysbench run
+    pushd $PWD > /dev/null
+    cd $WORK_DIR
+
     if [ -z  "$LOG_FILE" ]; then
         sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M cleanup
         status=$?
@@ -192,6 +197,9 @@ sysbench_cleanup () {
         fi
     fi
     [ -f $WORK_DIR/sysbench_prepare ] && rm $WORK_DIR/sysbench_prepare
+    # restore previous dir
+    popd  > /dev/null
+
     return 0
 }
 
