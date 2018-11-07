@@ -250,6 +250,10 @@ run_sysbench () {
         log_message info "sysbench prepare complete"
         # used for tracking the prepare for later runs
         touch $WORK_DIR/sysbench_prepare
+        log_message info "sleeping for ${SYSBENCH_DELAY}s after sysbench prepare"
+        # clear ctl+c trap
+        trap - SIGINT
+        sleep ${SYSBENCH_DELAY}
     fi
 
     # run sysbench tests
