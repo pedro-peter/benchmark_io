@@ -183,6 +183,8 @@ sysbench_cleanup () {
     cd $WORK_DIR
 
     if [ -z  "$LOG_FILE" ]; then
+        # LOG_FILE is not always defined if this function is called early in the script
+        # (i.e. if --cleanup is passed as a cmdline parameter).  log sysbench to stdout   
         sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M cleanup
         status=$?
     else
