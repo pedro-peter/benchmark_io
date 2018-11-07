@@ -1,0 +1,362 @@
+#!/usr/bin/env bash
+
+######################################################################################
+#
+# script to run a sysbench random r/w & sequential file test.
+#
+# this script is primary used to show bash features such as parsing command line args,
+# installing packages based on distro & logging with tty colours
+#
+# should function on centos & ubuntu
+#
+######################################################################################
+
+VERSION=0.1.0
+
+usage() {
+    # print command description & cmd line args
+
+    printf "${SCRIPT_NAME} [OPTION]... 
+
+Script to run a sysbench random r/w & sequential file test.
+
+The script runs a sysbench prepare command which creates a total of --file-size in --work-dir
+By adding the --skip-cleanup file you can reuse these files for subsequent benchmarks
+Use --cleanup to force the sysbench cleanup command
+Each benchmark result is logged to --work-dir/[timestamp]_${SCRIPT_NAME}_result.log
+
+ Options:
+  -w, --work-dir      Directory to create sysbench test files (required)
+  -s, --file-size     File size(in MB) for sysbench files. Default: ${BOLD}2 * system memory${NORMAL}
+  -t, --time          Time(in seconds) to run each sysbench test. Default: ${BOLD}300s${NORMAL}
+  -d, --delay         Delay(in seconds) between running each sysbench test. Default: ${BOLD}30s${NORMAL}
+  -s, --skip-cleanup  Do not run the sysbench cleanup command
+  -c, --cleanup       Clean up sysbench prepare files and exits
+  -v, --verbose       Output more information. (Items echoed to 'verbose')
+  -h, --help          Display this help and exit
+      --version       Output version information and exit\n"
+}
+
+init() {
+    # set vars that are used through the script
+
+    SCRIPT_NAME=$( basename "$0" )
+    
+    # tty colours for logging
+    RED=$( tput setaf 1 ) ;
+    YELLOW=$( tput setaf 3 ) ;
+    BLUE=$( tput setaf 4 ) ;
+    BOLD=$( tput bold ) ;
+    NORMAL=$( tput sgr0 ) ;
+
+    return 0
+}
+
+log_message() {
+    # log message to stdout
+    # do not log verbose messages unless VERSBOSE is true
+    # type        : error gets logged to stderr(2)
+    # message     : message to print
+    # no_new_line : if true, do not append \n to message
+
+    local type=$1
+    local message=$2
+    local no_new_line=$3
+
+    # set tty colours for printf
+    case $type in
+        info)
+            colour=$BLUE 
+            ;;
+        verbose)
+            colour=$YELLOW
+            ;;
+        error)
+            colour=$RED
+            ;;
+    esac
+    full_message="${colour}[$type]${NORMAL} ${message}"
+    if [ "$no_new_line" != "true" ]; then
+        full_message="${full_message}\n"
+    fi
+
+    if [ "$type" = "error" ]; then
+        # log errors to stderr
+        printf "$full_message"  >&2
+    elif [ "$type" = "verbose" ] && [ "$VERBOSE" = "true" ]; then
+        # only log verbose if VERBOSE is true
+        printf "$full_message"
+    elif [ "$type" = info ]; then
+        printf "$full_message"
+    fi
+        
+    return 0
+}
+
+check_sudo() {
+    # check if the current user has sudo access
+
+    # centos adds a user to wheel group for sudo access.  ubuntu uses the sudo group
+    if id -nG "$USER" | grep -Eqw "wheel|sudo"; then
+        log_message info "current user: ${BOLD}${USER}${NORMAL} has sudo access"
+        return 0
+    else
+        log_message error "current user: ${BOLD}${USER}${NORMAL} *does not* have sudo access"
+        return 1
+    fi
+}
+
+install_centos_epel_repo() {
+    # centos epel repo is required to install the sysbench rpm
+
+    # install epel repo if not already installed
+    log_message info "checking if centos epel repo is installed"
+    yum repolist epel | grep -Eq "^*epel/x86_64"
+    EPEL_INSTALLED=$?
+    if [ "$EPEL_INSTALLED" -ne 0 ]; then
+        log_message info "installing epel repo"
+        check_sudo
+        SUDO=$?
+        if [ "$SUDO" -ne 0 ]; then
+            log_message error "sudo access is required to install the epel repo & sysbench package" >&2
+            exit 1
+        fi
+        sudo yum install epel-release -y > /dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            log_message error "yum install epel-release failed"
+            exit 1
+        fi
+        log_message info "yum install epel-release succeded"
+    else
+        log_message info "epel repo is already installed"
+    fi
+    return 0
+}
+
+install_sysbench () {
+    # install sysbench package for ubuntu or centos distros
+
+    LINUX_DISTRO=$( awk -F= '/^ID=/{print $2}' /etc/os-release | tr -d '"' )
+    log_message info "linux distro is: ${BOLD}${LINUX_DISTRO}${NORMAL}"
+    if ! [ -x "$(command -v sysbench)" ]; then
+        log_message info "installing sysbench command(requires sudo access).  you may be prompted for your password"
+        case $LINUX_DISTRO in
+            ubuntu)
+                check_sudo
+                SUDO=$?
+                if [ "$SUDO" -ne 0 ]; then
+                    log_message error "sudo access is required to install the sysbench package"
+                    exit 1
+                fi
+                sudo apt install sysbench -y > /dev/null 2>&1
+                if [ "$?" -ne 0 ]; then
+                    log_message error "failed to install sysbench package"
+                    exit 1
+                fi
+                ;;
+            centos)
+                install_centos_epel_repo
+                sudo yum install -y sysbench > /dev/null 2>&1
+                if [ "$?" -ne 0 ]; then
+                    log_message error "failed to install sysbench package"
+                    exit 1
+                fi
+                ;;
+            *)
+                log_message error "only ubuntu & centos are supported"
+                exit 1
+                ;;
+        esac
+        log_message info "sysbench command installed"
+    else
+        log_message info "sysbench command already is installed"
+    fi
+    return 0
+}
+
+sysbench_cleanup () {
+    # run sysbench cleanup command and exit
+
+    log_message info "running sysbench cleanup command"
+    # store current dir to restore after sysbench run
+    pushd $PWD > /dev/null
+    cd $WORK_DIR
+
+    if [ -z  "$LOG_FILE" ]; then
+        # LOG_FILE is not always defined if this function is called early in the script
+        # (i.e. if --cleanup is passed as a cmdline parameter).  log sysbench to stdout   
+        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M cleanup
+        status=$?
+    else
+        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M cleanup >> $LOG_FILE
+        status=$?
+        logged="true"
+    fi
+    if [ $status -ne 0 ]; then
+        log_message error "sysbench cleanup failed"
+        if [ "$logged" = "true" ]; then
+            log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL}"
+        fi
+    fi
+    [ -f $WORK_DIR/sysbench_prepare ] && rm $WORK_DIR/sysbench_prepare
+    # restore previous dir
+    popd  > /dev/null
+
+    return 0
+}
+
+trap_sysbench () {
+    # kill & cleanup sysbench if ctl+c is pressed
+    # pid : pid to kill
+
+    local pid=$1
+
+    kill -9 $pid
+    log_message error "ctrl+c detected.  killing background sysbench process and exiting"
+    sysbench_cleanup
+    exit 1
+}
+
+run_sysbench () {
+    # run sysbench prepare & i/o tests
+
+    log_message info "starting sysbench test"
+    # store current dir to restore after sysbench run
+    pushd $PWD > /dev/null
+    cd $WORK_DIR
+    [ -d $WORK_DIR/logs ] || mkdir $WORK_DIR/logs
+
+    # stop sysbench if ctl+c is pressed
+    trap 'trap_sysbench $pid' SIGINT
+    if [ -f $WORK_DIR/sysbench_prepare ]; then
+        log_message info "sysbench prepare has already been run in this directory. skipping prepare"
+        log_message info "use the --cleanup cmd line parameter to remove a sysbench prepare"
+    else
+        log_message info "running sysbench fileio prepare."
+        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M prepare >> $LOG_FILE &
+        pid=$!
+        while [ -n "$(ps -p $pid -o pid=)" ]; do
+            sleep 1
+            dir_size=$( du -sm /tmp/sysbench/ | awk {'print $1'} )
+            log_message info "sysbench ${BOLD}prepare${NORMAL} completed ${YELLOW}[${dir_size}/${SYSBENCH_FILE_SIZE}]${NORMAL}MB\r" true
+        done
+        printf "\n"
+        wait $pid
+        if [ $? -ne 0 ]; then
+            log_message error "sysbench prepare failed"
+            log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL}"
+            exit 1
+        fi
+        log_message info "sysbench prepare complete"
+        # used for tracking the prepare for later runs
+        touch $WORK_DIR/sysbench_prepare
+    fi
+
+    # run sysbench tests
+    for sysbench_test in rndrw seqrd seqwr; do
+        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M  --file-test-mode=${sysbench_test} --time=${SYSBENCH_TIME} run >> $LOG_FILE &
+        pid=$!
+        count=0
+        while [ -n "$(ps -p $pid -o pid=)" ]; do
+            sleep 1
+            count=$((count+1))
+            log_message info "running sysbench ${BOLD}${sysbench_test}${NORMAL} test for ${YELLOW}[${count}/${SYSBENCH_TIME}]${NORMAL}s\r" true
+            #clear current line
+            tput el1
+        done
+        printf "\n"
+        wait $pid
+        if [ $? -ne 0 ]; then
+            log_message error "sysbench ${sysbench_test} test failed"
+            log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL}"
+            exit 1
+        fi
+
+        log_message info "completed sysbench ${sysbench_test} test"
+        log_message info "sleeping for ${SYSBENCH_DELAY}s between tests"
+        # clear ctl+c trap
+        trap - SIGINT
+        sleep ${SYSBENCH_DELAY}
+    done
+
+    if [ "$SYSBENCH_SKIP_CLEANUP" != "true" ]; then
+        sysbench_cleanup
+    fi
+
+    # restore previous dir
+    popd  > /dev/null
+    return 0
+}
+
+#### script starts here ####
+init
+
+# parse command line args
+OPTS=$( getopt -o hvw:s:t:d:sc --long help,verbose,work-dir:,file-size:,time:,delay:,skip-cleanup,cleanup \
+    -n $SCRIPT_NAME -- "$@" )
+
+eval set -- "$OPTS"
+
+# defaults
+VERBOSE=false
+WORK_DIR=
+FILE_SIZE=
+SYSBENCH_TIME=300
+SYSBENCH_DELAY=30
+SYSBENCH_SKIP_CLEANUP=
+
+while true; do
+  case "$1" in
+    -h | --help ) usage; exit 0 ;;
+    -v | --verbose ) VERBOSE=true; shift ;;
+    -w | --work-dir ) WORK_DIR="$2"; shift 2 ;;
+    -s | --file-size ) SYSBENCH_FILE_SIZE="$2"; shift 2 ;;
+    -t | --time ) SYSBENCH_TIME="$2"; shift 2 ;;
+    -d | --delay ) SYSBENCH_DELAY="$2"; shift 2 ;;
+    -s | --skip-cleanup) SYSBENCH_SKIP_CLEANUP=true; shift ;;
+    -c | --cleanup) sysbench_cleanup; exit 0 ;;
+    -- ) shift; break ;;
+    * ) break ;;
+  esac
+done
+# /parse command line args
+
+if [ -z "$WORK_DIR" ]; then
+    log_message error "-w or --work-dir must be set to create sysbench files"
+    log_message info "run $SCRIPT_NAME -h for more information"
+    exit 1
+fi
+log_message info "using: ${BOLD}${WORK_DIR}${NORMAL} to create temp sysbench files"
+
+system_memory=$( free -m | awk '/Mem\:/ { print $2 }' )
+log_message info "system memory is: ${BOLD}${system_memory}MB${NORMAL}"
+if [ -z "$SYSBENCH_FILE_SIZE" ]; then
+    # default to 2 x system memory for sysbench file i/o tests
+    SYSBENCH_FILE_SIZE="$(($system_memory * 2 ))"
+    append_msg="default"
+else
+    append_msg="specified"
+fi
+log_message info "using $append_msg file size: ${BOLD}${SYSBENCH_FILE_SIZE}MB/$(($SYSBENCH_FILE_SIZE / 1024))GB${NORMAL} for sysbench I/O tests"
+log_message info "sysbench recommend using twice the system ram to reduce the effects of linux buffers during I/O tests"
+
+log_message info "creating directory: ${BOLD}$WORK_DIR${NORMAL}"
+[ -d $WORK_DIR ] || mkdir -p $WORK_DIR
+# check there is enough free space on the disk device
+free_space=$( df -m ${WORK_DIR} --output=avail | tail -1 )
+# trim whitespace
+free_space=$( printf $free_space | awk '{$1=$1};1' )
+log_message info "${BOLD}${free_space}MB${NORMAL} free on disk device"
+if [ "$free_space" -lt "$SYSBENCH_FILE_SIZE" ]; then
+    log_message error "not enough free space on disk device"
+    exit 1
+fi
+
+LOG_FILE="${WORK_DIR}/logs/sysbench_result_$(date +%F_%R).log"
+log_message info "using log file: ${BOLD}$LOG_FILE${NORMAL}"
+
+install_sysbench
+run_sysbench
+log_message info "tests complete!"
+log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL} for results"
+exit 0
