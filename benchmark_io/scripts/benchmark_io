@@ -237,7 +237,7 @@ run_sysbench () {
         pid=$!
         while [ -n "$(ps -p $pid -o pid=)" ]; do
             sleep 1
-            dir_size=$( du -sm /tmp/sysbench/ | awk {'print $1'} )
+            dir_size=$( du -sm ${WORK_DIR} | awk {'print $1'} )
             log_message info "sysbench ${BOLD}prepare${NORMAL} completed ${YELLOW}[${dir_size}/${SYSBENCH_FILE_SIZE}]${NORMAL}MB\r" true
         done
         printf "\n"

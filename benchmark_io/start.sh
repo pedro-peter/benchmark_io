@@ -6,5 +6,5 @@ printf "time=$time\n"
 printf "delay=$delay\n"
 
 /benchmark_io --work-dir=$work_dir --file-size=$file_size --time=$time --delay=$delay
-cat /tmp/sysbench/logs/*.log
+cat ${work_dir}/logs/*.log
 exit 0
