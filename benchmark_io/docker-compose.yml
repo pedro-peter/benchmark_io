@@ -1,0 +1,12 @@
+version: "2"
+
+services:
+  benchmark_io:
+    build: .
+    image: benchmark_io
+    environment:
+      - work_dir=/tmp/sysbench
+      - file_size=300
+      - time=10
+      - delay=1
+      - TERM=xterm-256color
