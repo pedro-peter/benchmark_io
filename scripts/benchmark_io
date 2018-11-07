@@ -295,6 +295,8 @@ OPTS=$( getopt -o hvw:s:t:d:sc --long help,verbose,work-dir:,file-size:,time:,de
     -n $SCRIPT_NAME -- "$@" )
 
 eval set -- "$OPTS"
+
+# defaults
 VERBOSE=false
 WORK_DIR=
 FILE_SIZE=
