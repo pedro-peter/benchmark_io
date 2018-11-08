@@ -1,0 +1,22 @@
+#!/usr/bin/env bats
+
+# use bats to ensure correct setup to start running tests
+# tests require docker & docker-compose
+
+@test "docker-compose installed" {
+    run command -v docker-compose
+    [ "$status" -eq 0 ]
+}
+
+# require docker 1.18 for https://github.com/docker/compose/issues/5823
+# we need to add files outside outside context
+@test "docker installed" {
+    run docker --version
+    [ "$status" -eq 0 ]
+}
+
+@test "docker accessible to current user" {
+    run sudo docker ps
+    [ "$status" -eq 0 ]
+}
+

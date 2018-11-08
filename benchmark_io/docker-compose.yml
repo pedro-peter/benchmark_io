@@ -1,12 +1,15 @@
-version: "2"
-
+version: "2.4"
+# dockerfiles for each distro are in subdir ./docker named after the distro (e.g. ./docker/centos)
 services:
   benchmark_io:
-    build: .
-    image: benchmark_io
+    container_name: "${OS_DISTRO}_benchmark_io"
+    build:
+        context: "."
+        dockerfile: "./docker/${OS_DISTRO}/Dockerfile"
+    image: "${OS_DISTRO}_benchmark_io"
     environment:
       - work_dir=/tmp/sysbench
-      - file_size=300
-      - time=10
+      - file_size=150
+      - time=3
       - delay=1
       - TERM=xterm-256color

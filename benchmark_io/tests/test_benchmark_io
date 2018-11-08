@@ -1,0 +1,54 @@
+#!/usr/bin/env bats
+
+# use bats to test output of docker container logs
+
+# env vars passed from the parent script:
+# DISTRO               : linux distro being tested.  e.g. centos
+# TEST_TEST_CONTAINER_NAME  : name of container that ran benchmark_io. e.g. ubuntu_benchmark_io
+
+@test "container return code status is 0" {
+    status=$(sudo docker inspect --format='{{.State.ExitCode}}' ${TEST_CONTAINER_NAME})
+    [ "$status" -eq 0 ]
+}
+
+@test "linux distro is ${DISTRO}" {
+    sudo docker logs $TEST_CONTAINER_NAME | grep -E "linux distro is:" | grep "${DISTRO}"
+    status=$?
+    [ "$status" -eq 0 ]
+}
+
+@test "sysbench command installed" {
+    sudo docker logs $TEST_CONTAINER_NAME | grep -E "sysbench command installed|sysbench command already is installed"
+    status=$?
+    [ "$status" -eq 0 ]
+}
+
+@test "sysbench prepare complete" {
+    sudo docker logs $TEST_CONTAINER_NAME | grep -E "sysbench prepare complete"
+    status=$?
+    [ "$status" -eq 0 ]
+}
+
+@test "completed sysbench rndrw test" {
+    sudo docker logs $TEST_CONTAINER_NAME | grep -E "completed sysbench rndrw test"
+    status=$?
+    [ "$status" -eq 0 ]
+}
+
+@test "completed sysbench seqrd test" {
+    sudo docker logs $TEST_CONTAINER_NAME | grep -E "completed sysbench seqrd test"
+    status=$?
+    [ "$status" -eq 0 ]
+}
+
+@test "completed sysbench seqwr test" {
+    sudo docker logs $TEST_CONTAINER_NAME | grep -E "completed sysbench seqwr test"
+    status=$?
+    [ "$status" -eq 0 ]
+}
+
+@test "completed all sysbench tests & cleanup" {
+    sudo docker logs $TEST_CONTAINER_NAME | grep -E "tests complete!"
+    status=$?
+    [ "$status" -eq 0 ]
+}

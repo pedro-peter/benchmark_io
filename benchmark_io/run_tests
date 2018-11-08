@@ -1,0 +1,64 @@
+#!/bin/bash
+
+# create a docker container to run the benchmark_io command for each supported distro
+# the dockerfiles are located in ./docker/distro_name.  A common start.sh that run the benchmark is in ./docker 
+
+# global vars
+OS_DISTROS="centos ubuntu"
+CONTAINER_NAME="benchmark_io"
+
+# check bats testing framework is installed
+command -v bats > /dev/null
+if [ $? -ne 0 ]; then
+    printf "bats testing framework is not installed\n"
+    printf "see https://github.com/sstephenson/bats/wiki/Install-Bats-Using-a-Package"
+    exit 1
+else
+    printf " ✓ bats testing framework is installed\n"
+fi
+
+printf "running pre-flight checks\n"
+./tests/pre-checks
+if [ $? -ne 0 ]; then
+    printf "pre-flight checks failed\n"
+    exit 1
+fi
+
+printf " ✓ pre-flight checks passed\n"
+
+LOG_FILE=$(mktemp)
+printf "logfile ${LOG_FILE}\n"
+for os in $OS_DISTROS; do
+    printf "testing with distro ${os}\n"
+    printf "  building docker image\n"
+    # trunc logfile after each iteration
+    sudo bash -c "export OS_DISTRO=${os}; docker-compose build" &> $LOG_FILE
+    if [ $? -ne 0 ]; then
+        printf "  build failed\n"
+        exit 1
+    fi
+    printf "  build complete\n"
+    printf "  running container\n"
+    sudo bash -c "export OS_DISTRO=${os}; docker-compose up" &>> $LOG_FILE
+    # docker-compose does not seem to return correct error code
+    # get container exit code using docker inspect
+    status=$(sudo docker inspect --format='{{.State.ExitCode}}' ${os}_${CONTAINER_NAME})
+    if [ $status -ne 0 ]; then
+        printf "  run container failed\n"
+        cat $LOG_FILE
+        rm $LOG_FILE
+        exit 1
+    fi
+    printf "  running container complete\n"
+    printf "running tests...\n"
+    # env vars needed for bats testing
+    export DISTRO=${os}
+    export TEST_CONTAINER_NAME=${os}_${CONTAINER_NAME}
+    ./tests/test_benchmark_io
+    # cleanup 
+    sudo bash -c "export OS_DISTRO=${os}; docker-compose down --rmi all"
+done
+
+printf " all tests completed\n"
+rm $LOG_FILE
+exit 0
