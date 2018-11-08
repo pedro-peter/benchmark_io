@@ -6,14 +6,15 @@
 # env vars that are passed as parameters to the script can be modifed in docker-compose.yml (section environment)
 
 # global vars
-# OS_DISTRO      : linux distros to test script with.  a docker file exists for alpine, but is not currently supported
-# CONTAINER_NAME : the script creates a docker container call ${OS_DISTRO}_CONTAINER_NAME to run the tests
+# OS_DISTRO            : linux distros to test script with.  a docker file exists for alpine, but is not currently supported
+# CONTAINER_NAME       : the script creates a docker container call ${OS_DISTRO}_CONTAINER_NAME to run the tests
+# SKIP_SHELLCHECK_FAIL : allow tests to continue if shellcheck test(s) fail
 OS_DISTROS="centos ubuntu"
 CONTAINER_NAME="benchmark_io"
+SKIP_SHELLCHECK_FAIL=false
 
 # check bats testing framework is installed
-command -v bats > /dev/null
-if [ $? -ne 0 ]; then
+if ! command -v bats > /dev/null; then
     printf "bats testing framework is not installed\n"
     printf "see https://github.com/sstephenson/bats/wiki/Install-Bats-Using-a-Package\n"
     exit 1
@@ -22,8 +23,7 @@ else
 fi
 
 printf "running pre-flight checks\n"
-./tests/pre-checks
-if [ $? -ne 0 ]; then
+if ! ./tests/pre-checks; then
     printf "pre-flight checks failed\n"
     exit 1
 fi
@@ -37,37 +37,38 @@ printf " ✓ pre-flight checks passed\n"
 # export OS_DISTRO as empty to avoid docker-compose warning
 sudo bash -c "export OS_DISTRO=''; docker-compose up shellcheck"
 status=$(sudo docker inspect --format='{{.State.ExitCode}}' shellcheck_benchmark_io)
-if [ $status -eq 0 ]; then
+if [ "$status" -eq 0 ]; then
     printf  '✓ shellcheck tests passed\n'
 else
     printf 'shellcheck test(s) failed\n'
-    exit 1
+    if [ $SKIP_SHELLCHECK_FAIL != "true" ]; then
+        exit 1
+    fi
 fi
 sudo bash -c "docker shellcheck rm shellcheck_benchmark_io" &> /dev/null
 
 LOG_FILE=$(mktemp)
-printf "logfile ${LOG_FILE}\n"
+printf "logfile %s\n" "${LOG_FILE}"
 
 # launch a container with docker-compose for each distro
 for os in $OS_DISTROS; do
-    printf "testing with distro ${os}\n"
+    printf "testing with distro %s\n" "${os}"
     printf "  building docker image\n"
     # trunc logfile after each iteration
-    sudo bash -c "export OS_DISTRO=${os}; docker-compose build benchmark_io" &> $LOG_FILE
-    if [ $? -ne 0 ]; then
+    if ! sudo bash -c "export OS_DISTRO=${os}; docker-compose build benchmark_io" &> "$LOG_FILE"; then
         printf "  build failed\n"
         exit 1
     fi
     printf "  build complete\n"
     printf "  running container\n"
-    sudo bash -c "export OS_DISTRO=${os}; docker-compose up benchmark_io" &>> $LOG_FILE
+    sudo bash -c "export OS_DISTRO=${os}; docker-compose up benchmark_io" &>> "$LOG_FILE"
     # docker-compose does not seem to pass the container exit code
     # get container exit code using docker inspect
-    status=$(sudo docker inspect --format='{{.State.ExitCode}}' ${os}_${CONTAINER_NAME})
-    if [ $status -ne 0 ]; then
+    status=$(sudo docker inspect --format='{{.State.ExitCode}}' "${os}"_"${CONTAINER_NAME}")
+    if [ "$status" -ne 0 ]; then
         printf "  run container failed\n"
-        cat $LOG_FILE
-        rm $LOG_FILE
+        cat "$LOG_FILE"
+        rm "$LOG_FILE"
         exit 1
     fi
     printf "  running container complete\n"
@@ -77,11 +78,11 @@ for os in $OS_DISTROS; do
     export TEST_CONTAINER_NAME=${os}_${CONTAINER_NAME}
     # run bats tests
     ./tests/test_benchmark_io
-    printf "cleaning up test containers\n"
+    printf "cleaning up test container\n"
     sudo bash -c "docker rm ${TEST_CONTAINER_NAME}"
     sudo bash -c "docker rmi ${TEST_CONTAINER_NAME}"
 done
 
 printf " all tests completed\n"
-rm $LOG_FILE
+rm "$LOG_FILE"
 exit 0
