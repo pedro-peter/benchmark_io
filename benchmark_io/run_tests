@@ -30,6 +30,21 @@ fi
 
 printf " ✓ pre-flight checks passed\n"
 
+# run shellcheck on bash script
+# https://github.com/koalaman/shellcheck
+# this will catch common bash scripting mistakes
+
+# export OS_DISTRO as empty to avoid docker-compose warning
+sudo bash -c "export OS_DISTRO=''; docker-compose up shellcheck"
+status=$(sudo docker inspect --format='{{.State.ExitCode}}' shellcheck_benchmark_io)
+if [ $status -eq 0 ]; then
+    printf  '✓ shellcheck tests passed\n'
+else
+    printf 'shellcheck test(s) failed\n'
+    exit 1
+fi
+sudo bash -c "docker shellcheck rm shellcheck_benchmark_io" &> /dev/null
+
 LOG_FILE=$(mktemp)
 printf "logfile ${LOG_FILE}\n"
 
@@ -38,14 +53,14 @@ for os in $OS_DISTROS; do
     printf "testing with distro ${os}\n"
     printf "  building docker image\n"
     # trunc logfile after each iteration
-    sudo bash -c "export OS_DISTRO=${os}; docker-compose build" &> $LOG_FILE
+    sudo bash -c "export OS_DISTRO=${os}; docker-compose build benchmark_io" &> $LOG_FILE
     if [ $? -ne 0 ]; then
         printf "  build failed\n"
         exit 1
     fi
     printf "  build complete\n"
     printf "  running container\n"
-    sudo bash -c "export OS_DISTRO=${os}; docker-compose up" &>> $LOG_FILE
+    sudo bash -c "export OS_DISTRO=${os}; docker-compose up benchmark_io" &>> $LOG_FILE
     # docker-compose does not seem to pass the container exit code
     # get container exit code using docker inspect
     status=$(sudo docker inspect --format='{{.State.ExitCode}}' ${os}_${CONTAINER_NAME})
@@ -62,8 +77,9 @@ for os in $OS_DISTROS; do
     export TEST_CONTAINER_NAME=${os}_${CONTAINER_NAME}
     # run bats tests
     ./tests/test_benchmark_io
-    # cleanup 
-    sudo bash -c "export OS_DISTRO=${os}; docker-compose down --rmi all"
+    printf "cleaning up test containers\n"
+    sudo bash -c "docker rm ${TEST_CONTAINER_NAME}"
+    sudo bash -c "docker rmi ${TEST_CONTAINER_NAME}"
 done
 
 printf " all tests completed\n"
