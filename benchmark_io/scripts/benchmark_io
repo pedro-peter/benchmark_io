@@ -19,7 +19,7 @@ VERSION=0.1.0
 # cmd line arg defaults
 VERBOSE=false
 WORK_DIR=
-FILE_SIZE=
+SYSBENCH_FILE_SIZE=
 SYSBENCH_TIME=300
 SYSBENCH_DELAY=30
 SYSBENCH_SKIP_CLEANUP=
@@ -27,7 +27,7 @@ SYSBENCH_SKIP_CLEANUP=
 usage() {
     # print command description & cmd line args
 
-    printf "${SCRIPT_NAME} [OPTION]... 
+    printf "%s [OPTION]... 
 
 Script to run a sysbench random r/w & sequential file test.
 
@@ -38,14 +38,14 @@ Each benchmark result is logged to --work-dir/[timestamp]_${SCRIPT_NAME}_result.
 
  Options:
   -w, --work-dir      Directory to create sysbench test files (required)
-  -s, --file-size     File size(in MB) for sysbench files. Default: ${BOLD}2 * system memory${NORMAL}
+  -f, --file-size     File size(in MB) for sysbench files. Default: ${BOLD}2 * system memory${NORMAL}
   -t, --time          Time(in seconds) to run each sysbench test. Default: ${BOLD}300s${NORMAL}
   -d, --delay         Delay(in seconds) between running each sysbench test. Default: ${BOLD}30s${NORMAL}
   -s, --skip-cleanup  Do not run the sysbench cleanup command
   -c, --cleanup       Clean up sysbench prepare files and exits
   -v, --verbose       Output more information. (Items echoed to 'verbose')
   -h, --help          Display this help and exit
-      --version       Output version information and exit\n"
+      --version       Output version information and exit\n" "${SCRIPT_NAME}"
 }
 
 init() {
@@ -59,7 +59,6 @@ init() {
     BLUE=$( tput setaf 4 ) ;
     BOLD=$( tput bold ) ;
     NORMAL=$( tput sgr0 ) ;
-
     return 0
 }
 
@@ -87,20 +86,18 @@ log_message() {
             ;;
     esac
     full_message="${colour}[$type]${NORMAL} ${message}"
-    if [ "$no_new_line" != "true" ]; then
-        full_message="${full_message}\n"
-    fi
-
     if [ "$type" = "error" ]; then
         # log errors to stderr
-        printf "$full_message"  >&2
+        printf "%s" "$full_message"  >&2
     elif [ "$type" = "verbose" ] && [ "$VERBOSE" = "true" ]; then
         # only log verbose if VERBOSE is true
-        printf "$full_message"
+        printf "%s" "$full_message"
     elif [ "$type" = info ]; then
-        printf "$full_message"
+        printf "%s" "$full_message"
     fi
-        
+    if [ "$no_new_line" != "true" ]; then
+        printf "\n"
+    fi
     return 0
 }
 
@@ -108,7 +105,7 @@ check_sudo() {
     # check if the current user has sudo access
 
     # in case USER env is not set
-    if [ -z $USER ]; then
+    if [ -z "$USER" ]; then
         USER=$(whoami)
     fi
     # centos adds a user to wheel group for sudo access.  ubuntu uses the sudo group
@@ -119,6 +116,7 @@ check_sudo() {
         log_message error "current user: ${BOLD}${USER}${NORMAL} *does not* have sudo access"
         return 1
     fi
+    return 0
 }
 
 install_centos_epel_repo() {
@@ -136,8 +134,7 @@ install_centos_epel_repo() {
             log_message error "sudo access is required to install the epel repo & sysbench package"
             exit 1
         fi
-        sudo yum install epel-release -y > /dev/null 2>&1
-        if [ $? -ne 0 ]; then
+        if ! sudo yum install epel-release -y > /dev/null 2>&1; then
             log_message error "yum install epel-release failed"
             exit 1
         fi
@@ -164,16 +161,14 @@ install_sysbench () {
                     log_message error "sudo access is required to install the sysbench package"
                     exit 1
                 fi
-                sudo apt install sysbench -y > /dev/null 2>&1
-                if [ "$?" -ne 0 ]; then
+                if ! sudo apt install sysbench -y > /dev/null 2>&1; then
                     log_message error "failed to install sysbench package"
                     exit 1
                 fi
                 ;;
             centos)
                 install_centos_epel_repo
-                sudo yum install -y sysbench > /dev/null 2>&1
-                if [ "$?" -ne 0 ]; then
+                if ! sudo yum install -y sysbench > /dev/null 2>&1; then
                     log_message error "failed to install sysbench package"
                     exit 1
                 fi
@@ -195,16 +190,16 @@ sysbench_cleanup () {
 
     log_message info "running sysbench cleanup command"
     # store current dir to restore after sysbench run
-    pushd $PWD > /dev/null
-    cd $WORK_DIR
+    pushd "$PWD" > /dev/null || { log_message error "pushd ${PWD} failed"; exit 1; }
+    cd "$WORK_DIR" || { log_message error "cd ${WORK_DIR} failed"; exit 1; }
 
     if [ -z  "$LOG_FILE" ]; then
         # LOG_FILE is not always defined if this function is called early in the script
         # (i.e. if --cleanup is passed as a cmdline parameter).  log sysbench to stdout   
-        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M cleanup
+        sysbench fileio --file-total-size="${SYSBENCH_FILE_SIZE}"M cleanup
         status=$?
     else
-        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M cleanup >> $LOG_FILE
+        sysbench fileio --file-total-size="${SYSBENCH_FILE_SIZE}"M cleanup >> "$LOG_FILE"
         status=$?
         logged="true"
     fi
@@ -216,8 +211,7 @@ sysbench_cleanup () {
     fi
     [ -f $WORK_DIR/sysbench_prepare ] && rm $WORK_DIR/sysbench_prepare
     # restore previous dir
-    popd  > /dev/null
-
+    popd  > /dev/null || { log_message error "popd failed"; exit 1; }
     return 0
 }
 
@@ -227,7 +221,7 @@ trap_sysbench () {
 
     local pid=$1
 
-    kill -9 $pid
+    kill -9 "$pid"
     log_message error "ctrl+c detected.  killing background sysbench process and exiting"
     sysbench_cleanup
     exit 1
@@ -238,9 +232,12 @@ run_sysbench () {
 
     log_message info "starting sysbench test"
     # store current dir to restore after sysbench run
-    pushd $PWD > /dev/null
-    cd $WORK_DIR
-    [ -d $WORK_DIR/logs ] || mkdir $WORK_DIR/logs
+    pushd "$PWD" > /dev/null || { log_message error "pushd ${PWD} failed"; exit 1; }
+    cd "$WORK_DIR" || { log_message error "cd ${WORK_DIR} failed"; exit 1; }
+    # create logs dir if it does not exist
+    [ -d $WORK_DIR/logs ] || mkdir $WORK_DIR/logs || { log_message error "mkdir ${WORK_DIR}/logs failed"; exit 1; }
+    
+    echo "done 1"
 
     # stop sysbench if ctl+c is pressed
     trap 'trap_sysbench $pid' SIGINT
@@ -249,16 +246,16 @@ run_sysbench () {
         log_message info "use the --cleanup cmd line parameter to remove a sysbench prepare"
     else
         log_message info "running sysbench fileio prepare."
-        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M prepare >> $LOG_FILE &
+        sysbench fileio --file-total-size="${SYSBENCH_FILE_SIZE}"M prepare >> "$LOG_FILE" &
         pid=$!
         while [ -n "$(ps -p $pid -o pid=)" ]; do
             sleep 1
-            dir_size=$( du -sm ${WORK_DIR} | awk {'print $1'} )
-            log_message info "sysbench ${BOLD}prepare${NORMAL} completed ${YELLOW}[${dir_size}/${SYSBENCH_FILE_SIZE}]${NORMAL}MB\r" true
+            dir_size=$( du -sm ${WORK_DIR} | awk '{print $1}' )
+            log_message info "sysbench ${BOLD}prepare${NORMAL} completed ${YELLOW}[${dir_size}/${SYSBENCH_FILE_SIZE}]${NORMAL}MB" true
+            printf "\r"
         done
         printf "\n"
-        wait $pid
-        if [ $? -ne 0 ]; then
+        if ! wait $pid; then
             log_message error "sysbench prepare failed"
             log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL}"
             exit 1
@@ -274,21 +271,21 @@ run_sysbench () {
 
     # run sysbench tests
     for sysbench_test in rndrw seqrd seqwr; do
-        sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M  --file-test-mode=${sysbench_test} --time=${SYSBENCH_TIME} run >> $LOG_FILE &
+        sysbench fileio --file-total-size="${SYSBENCH_FILE_SIZE}"M  --file-test-mode="${sysbench_test}" --time="${SYSBENCH_TIME}" run >> "$LOG_FILE" &
         pid=$!
         count=0
         # loop until pid(sysbench) stops
         while [ -n "$(ps -p $pid -o pid=)" ]; do
             sleep 1
             count=$((count+1))
-            log_message info "running sysbench ${BOLD}${sysbench_test}${NORMAL} test for ${YELLOW}[${count}/${SYSBENCH_TIME}]${NORMAL}s\r" true
+            log_message info "running sysbench ${BOLD}${sysbench_test}${NORMAL} test for ${YELLOW}[${count}/${SYSBENCH_TIME}]${NORMAL}s" true
+            printf "\r"
             #clear current line
             tput el1
         done
         printf "\n"
         # wait returns status code of backgrounded process
-        wait $pid
-        if [ $? -ne 0 ]; then
+        if ! wait $pid; then
             log_message error "sysbench ${sysbench_test} test failed"
             log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL}"
             exit 1
@@ -306,16 +303,16 @@ run_sysbench () {
     fi
 
     # restore previous dir
-    popd  > /dev/null
+    popd  > /dev/null || { log_message error "popd failed"; exit 1; }
     return 0
 }
 
 parse_cmdline_opts () {
     # parse command line args using getopt
-    # $@ : command line paramaters
+    # $@ : command line parameters
 
-    OPTS=$( getopt -o hvw:s:t:d:sc --long help,verbose,work-dir:,file-size:,time:,delay:,skip-cleanup,cleanup \
-        -n $SCRIPT_NAME -- "$@" )
+    OPTS=$( getopt -o hvw:s:t:d:sc --long help,verbose,work-dir:,file-size:,time:,delay:,skip-cleanup,cleanup,version \
+        -n "$SCRIPT_NAME" -- "$@" )
 
     eval set -- "$OPTS"
 
@@ -324,11 +321,12 @@ parse_cmdline_opts () {
         -h | --help ) usage; exit 0 ;;
         -v | --verbose ) VERBOSE=true; shift ;;
         -w | --work-dir ) WORK_DIR="$2"; shift 2 ;;
-        -s | --file-size ) SYSBENCH_FILE_SIZE="$2"; shift 2 ;;
+        -f | --file-size ) SYSBENCH_FILE_SIZE="$2"; shift 2 ;;
         -t | --time ) SYSBENCH_TIME="$2"; shift 2 ;;
         -d | --delay ) SYSBENCH_DELAY="$2"; shift 2 ;;
         -s | --skip-cleanup) SYSBENCH_SKIP_CLEANUP=true; shift ;;
         -c | --cleanup) sysbench_cleanup; exit 0 ;;
+             --version ) printf "version %s\n" "$VERSION"; exit 0 ;;
         -- ) shift; break ;;
         * ) break ;;
       esac
@@ -337,7 +335,7 @@ parse_cmdline_opts () {
 }
 
 main () {
-    # 
+    # main entry point for script
 
     init
     parse_cmdline_opts "$@"
@@ -353,20 +351,20 @@ main () {
     log_message info "system memory is: ${BOLD}${system_memory}MB${NORMAL}"
     if [ -z "$SYSBENCH_FILE_SIZE" ]; then
         # default to 2 x system memory for sysbench file i/o tests
-        SYSBENCH_FILE_SIZE="$(($system_memory * 2 ))"
+        SYSBENCH_FILE_SIZE="$((system_memory * 2 ))"
         append_msg="default"
     else
         append_msg="specified"
     fi
-    log_message info "using $append_msg file size: ${BOLD}${SYSBENCH_FILE_SIZE}MB/$(($SYSBENCH_FILE_SIZE / 1024))GB${NORMAL} for sysbench I/O tests"
+    log_message info "using $append_msg file size: ${BOLD}${SYSBENCH_FILE_SIZE}MB/$((SYSBENCH_FILE_SIZE / 1024))GB${NORMAL} for sysbench I/O tests"
     log_message info "sysbench recommend using twice the system ram to reduce the effects of linux buffers during I/O tests"
 
     log_message info "creating directory: ${BOLD}$WORK_DIR${NORMAL}"
-    [ -d $WORK_DIR ] || mkdir -p $WORK_DIR
+    [ -d "$WORK_DIR" ] || mkdir -p "$WORK_DIR" || { log_message error "create $WORK_DIR failed"; exit 1; }
     # check there is enough free space on the disk device
-    free_space=$( df -m ${WORK_DIR} --output=avail | tail -1 )
+    free_space=$( df -m "${WORK_DIR}" --output=avail | tail -1 )
     # trim whitespace
-    free_space=$( printf $free_space | awk '{$1=$1};1' )
+    free_space=$( printf "%s" "$free_space" | awk '{$1=$1};1' )
     log_message info "${BOLD}${free_space}MB${NORMAL} free on disk device"
     if [ "$free_space" -lt "$SYSBENCH_FILE_SIZE" ]; then
         log_message error "not enough free space on disk device"
@@ -381,9 +379,8 @@ main () {
 
     log_message info "tests complete!"
     log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL} for results"
-    return 0
+    exit 0
 }
 
 #### script starts here ####
 main "$@"
-exit 0
