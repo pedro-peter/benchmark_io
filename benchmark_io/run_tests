@@ -13,7 +13,7 @@ CONTAINER_NAME="benchmark_io"
 command -v bats > /dev/null
 if [ $? -ne 0 ]; then
     printf "bats testing framework is not installed\n"
-    printf "see https://github.com/sstephenson/bats/wiki/Install-Bats-Using-a-Package"
+    printf "see https://github.com/sstephenson/bats/wiki/Install-Bats-Using-a-Package\n"
     exit 1
 else
     printf " ✓ bats testing framework is installed\n"
