@@ -6,6 +6,7 @@
 # env vars that are passed as parameters to the script can be modifed in docker-compose.yml (environment)
 
 # global vars
+# linux distros to test script with.  alpine is not currently supported
 OS_DISTROS="centos ubuntu"
 CONTAINER_NAME="benchmark_io"
 
@@ -59,6 +60,7 @@ for os in $OS_DISTROS; do
     ./tests/test_benchmark_io
     # cleanup 
     sudo bash -c "export OS_DISTRO=${os}; docker-compose down --rmi all"
+exit
 done
 
 printf " all tests completed\n"
