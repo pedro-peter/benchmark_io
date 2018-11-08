@@ -125,7 +125,7 @@ install_centos_epel_repo() {
         check_sudo
         SUDO=$?
         if [ "$SUDO" -ne 0 ]; then
-            log_message error "sudo access is required to install the epel repo & sysbench package" >&2
+            log_message error "sudo access is required to install the epel repo & sysbench package"
             exit 1
         fi
         sudo yum install epel-release -y > /dev/null 2>&1
