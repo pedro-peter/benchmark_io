@@ -1,2 +1,3 @@
+# exclude files from git commits
 *.tmp
 *.swp
