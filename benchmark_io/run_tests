@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # create a docker container to run the benchmark_io command for each supported distro
-# the dockerfiles are located in ./docker/distro_name.  A common start.sh that run the benchmark is in ./docker 
+# the dockerfiles are located in ./docker/distro_name
+# a common docker entrypoint 'start.sh' that runs the benchmark is in ./docker
+# env vars that are passed as parameters to the script can be modifed in docker-compose.yml (environment)
 
 # global vars
 OS_DISTROS="centos ubuntu"

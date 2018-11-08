@@ -8,6 +8,7 @@ services:
         dockerfile: "./docker/${OS_DISTRO}/Dockerfile"
     image: "${OS_DISTRO}_benchmark_io"
     environment:
+      # env vars that are passed as args to the benchmark script
       - work_dir=/tmp/sysbench
       - file_size=150
       - time=3
