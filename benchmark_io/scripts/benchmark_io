@@ -16,6 +16,14 @@
 
 VERSION=0.1.0
 
+# cmd line arg defaults
+VERBOSE=false
+WORK_DIR=
+FILE_SIZE=
+SYSBENCH_TIME=300
+SYSBENCH_DELAY=30
+SYSBENCH_SKIP_CLEANUP=
+
 usage() {
     # print command description & cmd line args
 
@@ -302,75 +310,80 @@ run_sysbench () {
     return 0
 }
 
+parse_cmdline_opts () {
+    # parse command line args using getopt
+    # $@ : command line paramaters
+
+    OPTS=$( getopt -o hvw:s:t:d:sc --long help,verbose,work-dir:,file-size:,time:,delay:,skip-cleanup,cleanup \
+        -n $SCRIPT_NAME -- "$@" )
+
+    eval set -- "$OPTS"
+
+    while true; do
+      case "$1" in
+        -h | --help ) usage; exit 0 ;;
+        -v | --verbose ) VERBOSE=true; shift ;;
+        -w | --work-dir ) WORK_DIR="$2"; shift 2 ;;
+        -s | --file-size ) SYSBENCH_FILE_SIZE="$2"; shift 2 ;;
+        -t | --time ) SYSBENCH_TIME="$2"; shift 2 ;;
+        -d | --delay ) SYSBENCH_DELAY="$2"; shift 2 ;;
+        -s | --skip-cleanup) SYSBENCH_SKIP_CLEANUP=true; shift ;;
+        -c | --cleanup) sysbench_cleanup; exit 0 ;;
+        -- ) shift; break ;;
+        * ) break ;;
+      esac
+    done
+    return 0
+}
+
+main () {
+    # 
+
+    init
+    parse_cmdline_opts "$@"
+
+    if [ -z "$WORK_DIR" ]; then
+        log_message error "-w or --work-dir must be set to create sysbench files"
+        log_message info "run $SCRIPT_NAME -h for more information"
+        exit 1
+    fi
+    log_message info "using: ${BOLD}${WORK_DIR}${NORMAL} to create temp sysbench files"
+
+    system_memory=$( free -m | awk '/Mem\:/ { print $2 }' )
+    log_message info "system memory is: ${BOLD}${system_memory}MB${NORMAL}"
+    if [ -z "$SYSBENCH_FILE_SIZE" ]; then
+        # default to 2 x system memory for sysbench file i/o tests
+        SYSBENCH_FILE_SIZE="$(($system_memory * 2 ))"
+        append_msg="default"
+    else
+        append_msg="specified"
+    fi
+    log_message info "using $append_msg file size: ${BOLD}${SYSBENCH_FILE_SIZE}MB/$(($SYSBENCH_FILE_SIZE / 1024))GB${NORMAL} for sysbench I/O tests"
+    log_message info "sysbench recommend using twice the system ram to reduce the effects of linux buffers during I/O tests"
+
+    log_message info "creating directory: ${BOLD}$WORK_DIR${NORMAL}"
+    [ -d $WORK_DIR ] || mkdir -p $WORK_DIR
+    # check there is enough free space on the disk device
+    free_space=$( df -m ${WORK_DIR} --output=avail | tail -1 )
+    # trim whitespace
+    free_space=$( printf $free_space | awk '{$1=$1};1' )
+    log_message info "${BOLD}${free_space}MB${NORMAL} free on disk device"
+    if [ "$free_space" -lt "$SYSBENCH_FILE_SIZE" ]; then
+        log_message error "not enough free space on disk device"
+        exit 1
+    fi
+
+    LOG_FILE="${WORK_DIR}/logs/sysbench_result_$(date +%F_%R).log"
+    log_message info "using log file: ${BOLD}$LOG_FILE${NORMAL}"
+
+    install_sysbench
+    run_sysbench
+
+    log_message info "tests complete!"
+    log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL} for results"
+    return 0
+}
+
 #### script starts here ####
-init
-
-# parse command line args
-OPTS=$( getopt -o hvw:s:t:d:sc --long help,verbose,work-dir:,file-size:,time:,delay:,skip-cleanup,cleanup \
-    -n $SCRIPT_NAME -- "$@" )
-
-eval set -- "$OPTS"
-
-# defaults
-VERBOSE=false
-WORK_DIR=
-FILE_SIZE=
-SYSBENCH_TIME=300
-SYSBENCH_DELAY=30
-SYSBENCH_SKIP_CLEANUP=
-
-while true; do
-  case "$1" in
-    -h | --help ) usage; exit 0 ;;
-    -v | --verbose ) VERBOSE=true; shift ;;
-    -w | --work-dir ) WORK_DIR="$2"; shift 2 ;;
-    -s | --file-size ) SYSBENCH_FILE_SIZE="$2"; shift 2 ;;
-    -t | --time ) SYSBENCH_TIME="$2"; shift 2 ;;
-    -d | --delay ) SYSBENCH_DELAY="$2"; shift 2 ;;
-    -s | --skip-cleanup) SYSBENCH_SKIP_CLEANUP=true; shift ;;
-    -c | --cleanup) sysbench_cleanup; exit 0 ;;
-    -- ) shift; break ;;
-    * ) break ;;
-  esac
-done
-# /parse command line args
-
-if [ -z "$WORK_DIR" ]; then
-    log_message error "-w or --work-dir must be set to create sysbench files"
-    log_message info "run $SCRIPT_NAME -h for more information"
-    exit 1
-fi
-log_message info "using: ${BOLD}${WORK_DIR}${NORMAL} to create temp sysbench files"
-
-system_memory=$( free -m | awk '/Mem\:/ { print $2 }' )
-log_message info "system memory is: ${BOLD}${system_memory}MB${NORMAL}"
-if [ -z "$SYSBENCH_FILE_SIZE" ]; then
-    # default to 2 x system memory for sysbench file i/o tests
-    SYSBENCH_FILE_SIZE="$(($system_memory * 2 ))"
-    append_msg="default"
-else
-    append_msg="specified"
-fi
-log_message info "using $append_msg file size: ${BOLD}${SYSBENCH_FILE_SIZE}MB/$(($SYSBENCH_FILE_SIZE / 1024))GB${NORMAL} for sysbench I/O tests"
-log_message info "sysbench recommend using twice the system ram to reduce the effects of linux buffers during I/O tests"
-
-log_message info "creating directory: ${BOLD}$WORK_DIR${NORMAL}"
-[ -d $WORK_DIR ] || mkdir -p $WORK_DIR
-# check there is enough free space on the disk device
-free_space=$( df -m ${WORK_DIR} --output=avail | tail -1 )
-# trim whitespace
-free_space=$( printf $free_space | awk '{$1=$1};1' )
-log_message info "${BOLD}${free_space}MB${NORMAL} free on disk device"
-if [ "$free_space" -lt "$SYSBENCH_FILE_SIZE" ]; then
-    log_message error "not enough free space on disk device"
-    exit 1
-fi
-
-LOG_FILE="${WORK_DIR}/logs/sysbench_result_$(date +%F_%R).log"
-log_message info "using log file: ${BOLD}$LOG_FILE${NORMAL}"
-
-install_sysbench
-run_sysbench
-log_message info "tests complete!"
-log_message info "check log file ${BOLD}${LOG_FILE}${NORMAL} for results"
+main "$@"
 exit 0
