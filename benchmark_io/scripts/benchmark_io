@@ -269,6 +269,7 @@ run_sysbench () {
         sysbench fileio --file-total-size=${SYSBENCH_FILE_SIZE}M  --file-test-mode=${sysbench_test} --time=${SYSBENCH_TIME} run >> $LOG_FILE &
         pid=$!
         count=0
+        # loop until pid(sysbench) stops
         while [ -n "$(ps -p $pid -o pid=)" ]; do
             sleep 1
             count=$((count+1))
@@ -277,6 +278,7 @@ run_sysbench () {
             tput el1
         done
         printf "\n"
+        # wait returns status code of backgrounded process
         wait $pid
         if [ $? -ne 0 ]; then
             log_message error "sysbench ${sysbench_test} test failed"
@@ -285,9 +287,9 @@ run_sysbench () {
         fi
 
         log_message info "completed sysbench ${sysbench_test} test"
-        log_message info "sleeping for ${SYSBENCH_DELAY}s between tests"
         # clear ctl+c trap
         trap - SIGINT
+        log_message info "sleeping for ${SYSBENCH_DELAY}s between tests"
         sleep ${SYSBENCH_DELAY}
     done
 
