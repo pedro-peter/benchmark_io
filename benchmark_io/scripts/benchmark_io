@@ -143,6 +143,7 @@ install_centos_epel_repo() {
 install_sysbench () {
     # install sysbench package for ubuntu or centos distros
 
+    # lsb (linux standard base) specifies an os-release file
     LINUX_DISTRO=$( awk -F= '/^ID=/{print $2}' /etc/os-release | tr -d '"' )
     log_message info "linux distro is: ${BOLD}${LINUX_DISTRO}${NORMAL}"
     if ! [ -x "$(command -v sysbench)" ]; then
