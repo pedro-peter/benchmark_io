@@ -4,8 +4,8 @@ services:
   benchmark_io:
     container_name: "${OS_DISTRO}_benchmark_io"
     build:
-        context: "."
-        dockerfile: "./docker/${OS_DISTRO}/Dockerfile"
+      context: "."
+      dockerfile: "./docker/${OS_DISTRO}/Dockerfile"
     image: "${OS_DISTRO}_benchmark_io"
     environment:
       # env vars that are passed as args to the benchmark script
@@ -14,3 +14,11 @@ services:
       - time=3
       - delay=1
       - TERM=xterm-256color
+  shellcheck:
+    container_name: shellcheck_benchmark_io
+    image: koalaman/shellcheck
+    volumes:
+      - ./scripts:/mnt
+    command: "benchmark_io"
+
+ #sudo docker run -v "$PWD:/mnt" koalaman/shellcheck benchmark_io
