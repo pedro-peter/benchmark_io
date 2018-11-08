@@ -64,7 +64,6 @@ for os in $OS_DISTROS; do
     ./tests/test_benchmark_io
     # cleanup 
     sudo bash -c "export OS_DISTRO=${os}; docker-compose down --rmi all"
-exit
 done
 
 printf " all tests completed\n"
