@@ -2,12 +2,15 @@
 
 ######################################################################################
 #
-# script to run a sysbench random r/w & sequential file test.
+# script to run a sysbench random r/w & sequential file tests
 #
-# this script is primary used to show bash features such as parsing command line args,
-# installing packages based on distro & logging with tty colours
+# this script is primary used to show bash features such as:
+#  - parsing command line args
+#  - installing packages based on distro
+#  - backgrounding a process and using a trap to stop the process if ^c is pressed
+#  - logging with tty colours
 #
-# should function on centos & ubuntu
+# tested on centos & ubuntu
 #
 ######################################################################################
 
