@@ -1,4 +1,6 @@
 #!/bin/bash
+### docker entrypoint script ####
+
 printf "### env vars ###\n"
 printf "work_dir=$work_dir\n"
 printf "file_size=$file_size\n"
