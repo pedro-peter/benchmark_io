@@ -17,7 +17,8 @@
 VERSION=0.1.0
 
 # cmd line arg defaults
-VERBOSE=false
+LOG_VERBOSE=false
+LOG_DEBUG=false
 WORK_DIR=
 SYSBENCH_FILE_SIZE=
 SYSBENCH_TIME=300
@@ -44,6 +45,7 @@ Each benchmark result is logged to --work-dir/[timestamp]_${SCRIPT_NAME}_result.
   -s, --skip-cleanup  Do not run the sysbench cleanup command
   -c, --cleanup       Clean up sysbench prepare files and exits
   -v, --verbose       Output more information. (Items echoed to 'verbose')
+      --debug         Output debug information.
   -h, --help          Display this help and exit
       --version       Output version information and exit\n" "${SCRIPT_NAME}"
 }
@@ -57,6 +59,7 @@ init() {
     RED=$( tput setaf 1 ) ;
     YELLOW=$( tput setaf 3 ) ;
     BLUE=$( tput setaf 4 ) ;
+    GREY=$( tput setaf 8 );
     BOLD=$( tput bold ) ;
     NORMAL=$( tput sgr0 ) ;
     return 0
@@ -64,7 +67,7 @@ init() {
 
 log_message() {
     # log message to stdout
-    # do not log verbose messages unless VERSBOSE is true
+    # do not log verbose/debug messages unless LOG_VERSBOSE/LOG_DEBUG is true
     # type        : error gets logged to stderr(2)
     # message     : message to print
     # no_new_line : if true, do not append \n to message
@@ -81,18 +84,28 @@ log_message() {
         verbose)
             colour=$YELLOW
             ;;
+        debug)
+            colour=$GREY
+            ;;
         error)
             colour=$RED
             ;;
     esac
+
+    if [ "$type" = "verbose" ] && [ "$LOG_VERBOSE" != "true" ]; then
+        # only log verbose if LOG_VERBOSE is true
+        return 0
+    fi
+    if [ "$type" = "debug" ] && [ "$LOG_DEBUG" != "true" ]; then
+        # only log debug if LOG_DEBUG is true
+        return 0
+    fi
+
     full_message="${colour}[$type]${NORMAL} ${message}"
     if [ "$type" = "error" ]; then
         # log errors to stderr
         printf "%s" "$full_message"  >&2
-    elif [ "$type" = "verbose" ] && [ "$VERBOSE" = "true" ]; then
-        # only log verbose if VERBOSE is true
-        printf "%s" "$full_message"
-    elif [ "$type" = info ]; then
+    else
         printf "%s" "$full_message"
     fi
     if [ "$no_new_line" != "true" ]; then
@@ -311,7 +324,7 @@ parse_cmdline_opts () {
     # parse command line args using getopt
     # $@ : command line parameters
 
-    OPTS=$( getopt -o hvw:s:t:d:sc --long help,verbose,work-dir:,file-size:,time:,delay:,skip-cleanup,cleanup,version \
+    OPTS=$( getopt -o hvw:s:t:d:sc --long help,verbose,work-dir:,file-size:,time:,delay:,skip-cleanup,cleanup,debug,version \
         -n "$SCRIPT_NAME" -- "$@" )
 
     eval set -- "$OPTS"
@@ -319,13 +332,14 @@ parse_cmdline_opts () {
     while true; do
       case "$1" in
         -h | --help ) usage; exit 0 ;;
-        -v | --verbose ) VERBOSE=true; shift ;;
+        -v | --verbose ) LOG_VERBOSE=true; shift ;;
         -w | --work-dir ) WORK_DIR="$2"; shift 2 ;;
         -f | --file-size ) SYSBENCH_FILE_SIZE="$2"; shift 2 ;;
         -t | --time ) SYSBENCH_TIME="$2"; shift 2 ;;
         -d | --delay ) SYSBENCH_DELAY="$2"; shift 2 ;;
         -s | --skip-cleanup) SYSBENCH_SKIP_CLEANUP=true; shift ;;
         -c | --cleanup) sysbench_cleanup; exit 0 ;;
+             --debug) LOG_DEBUG=true; shift ;;
              --version ) printf "version %s\n" "$VERSION"; exit 0 ;;
         -- ) shift; break ;;
         * ) break ;;
