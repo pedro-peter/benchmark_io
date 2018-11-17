@@ -56,17 +56,17 @@ init() {
     SCRIPT_NAME=$( basename "$0" )
     
     # tty colours for logging
-    RED=$( tput setaf 1 ) ;
-    YELLOW=$( tput setaf 3 ) ;
-    BLUE=$( tput setaf 4 ) ;
-    GREY=$( tput setaf 8 );
-    BOLD=$( tput bold ) ;
-    NORMAL=$( tput sgr0 ) ;
+    RED=$( tput setaf 1 &> /dev/null ) ;
+    YELLOW=$( tput setaf 3 &> /dev/null ) ;
+    BLUE=$( tput setaf 4 &> /dev/null ) ;
+    GREY=$( tput setaf 8 &> /dev/null );
+    BOLD=$( tput bold &> /dev/null ) ;
+    NORMAL=$( tput sgr0 &> /dev/null ) ;
     return 0
 }
 
 log_message() {
-    # log message to stdout
+    # log message to stdout/stderr
     # do not log verbose/debug messages unless LOG_VERSBOSE/LOG_DEBUG is true
     # type        : error gets logged to stderr(2)
     # message     : message to print
