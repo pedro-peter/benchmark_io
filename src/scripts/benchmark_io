@@ -44,7 +44,7 @@ Each benchmark result is logged to --work-dir/[timestamp]_${SCRIPT_NAME}_result.
   -d, --delay         Delay(in seconds) between running each sysbench test. Default: ${BOLD}30s${NORMAL}
   -s, --skip-cleanup  Do not run the sysbench cleanup command
   -c, --cleanup       Clean up sysbench prepare files and exits
-  -v, --verbose       Output more information. (Items echoed to 'verbose')
+  -v, --verbose       Output more information.
       --debug         Output debug information.
   -h, --help          Display this help and exit
       --version       Output version information and exit\n" "${SCRIPT_NAME}"
