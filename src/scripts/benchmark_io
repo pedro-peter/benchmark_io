@@ -56,17 +56,12 @@ init() {
     SCRIPT_NAME=$( basename "$0" )
     
     # tty colours for logging
-    if [ -z "${TERM}" ]; then
-        log_message info "TERM env var is not set.  tty colours not possible"
-        return 1
-    else
-        RED=$( tput setaf 1 ) ;
-        YELLOW=$( tput setaf 3 ) ;
-        BLUE=$( tput setaf 4 ) ;
-        GREY=$( tput setaf 8 );
-        BOLD=$( tput bold ) ;
-        NORMAL=$( tput sgr0 ) ;
-    fi
+    RED=$( tput setaf 1 ) ;
+    YELLOW=$( tput setaf 3 ) ;
+    BLUE=$( tput setaf 4 ) ;
+    GREY=$( tput setaf 8 );
+    BOLD=$( tput bold ) ;
+    NORMAL=$( tput sgr0 ) ;
     return 0
 }
 
