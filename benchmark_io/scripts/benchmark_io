@@ -250,8 +250,6 @@ run_sysbench () {
     # create logs dir if it does not exist
     [ -d $WORK_DIR/logs ] || mkdir $WORK_DIR/logs || { log_message error "mkdir ${WORK_DIR}/logs failed"; exit 1; }
     
-    echo "done 1"
-
     # stop sysbench if ctl+c is pressed
     trap 'trap_sysbench $pid' SIGINT
     if [ -f $WORK_DIR/sysbench_prepare ]; then
@@ -324,7 +322,7 @@ parse_cmdline_opts () {
     # parse command line args using getopt
     # $@ : command line parameters
 
-    OPTS=$( getopt -o hvw:s:t:d:sc --long help,verbose,work-dir:,file-size:,time:,delay:,skip-cleanup,cleanup,debug,version \
+    OPTS=$( getopt -o hvw:f:t:d:sc --long help,verbose,work-dir:,file-size:,time:,delay:,skip-cleanup,cleanup,debug,version \
         -n "$SCRIPT_NAME" -- "$@" )
 
     eval set -- "$OPTS"
@@ -332,14 +330,14 @@ parse_cmdline_opts () {
     while true; do
       case "$1" in
         -h | --help ) usage; exit 0 ;;
-        -v | --verbose ) LOG_VERBOSE=true; shift ;;
-        -w | --work-dir ) WORK_DIR="$2"; shift 2 ;;
-        -f | --file-size ) SYSBENCH_FILE_SIZE="$2"; shift 2 ;;
-        -t | --time ) SYSBENCH_TIME="$2"; shift 2 ;;
-        -d | --delay ) SYSBENCH_DELAY="$2"; shift 2 ;;
-        -s | --skip-cleanup) SYSBENCH_SKIP_CLEANUP=true; shift ;;
-        -c | --cleanup) sysbench_cleanup; exit 0 ;;
-             --debug) LOG_DEBUG=true; shift ;;
+             --debug ) LOG_DEBUG=true; log_message debug "option: --debug debug logging enabled"; shift ;;
+        -v | --verbose ) LOG_VERBOSE=true; log_message debug "option: -v verbose logging enabled"; shift ;;
+        -w | --work-dir ) WORK_DIR="$2"; log_message debug "option: -w workdir specified"; shift 2 ;;
+        -f | --file-size ) SYSBENCH_FILE_SIZE="$2"; log_message debug "option: -f sysbench file size specified"; shift 2 ;;
+        -t | --time ) SYSBENCH_TIME="$2"; log_message debug "option: -t sysbench time specified"; shift 2 ;;
+        -d | --delay ) SYSBENCH_DELAY="$2"; log_message debug "option: -d sysbench delay specified"; shift 2 ;;
+        -s | --skip-cleanup) SYSBENCH_SKIP_CLEANUP=true; log_message debug "option: -s skip sysbench cleanup enabled"; shift ;;
+        -c | --cleanup) sysbench_cleanup; log_message debug "option: -c sysbench cleanup enabled"; exit 0 ;;
              --version ) printf "version %s\n" "$VERSION"; exit 0 ;;
         -- ) shift; break ;;
         * ) break ;;
@@ -373,8 +371,8 @@ main () {
     log_message info "using $append_msg file size: ${BOLD}${SYSBENCH_FILE_SIZE}MB/$((SYSBENCH_FILE_SIZE / 1024))GB${NORMAL} for sysbench I/O tests"
     log_message info "sysbench recommend using twice the system ram to reduce the effects of linux buffers during I/O tests"
 
-    log_message info "creating directory: ${BOLD}$WORK_DIR${NORMAL}"
-    [ -d "$WORK_DIR" ] || mkdir -p "$WORK_DIR" || { log_message error "create $WORK_DIR failed"; exit 1; }
+    log_message info "checking directory exists: ${BOLD}${WORK_DIR}${NORMAL}"
+    [ -d "$WORK_DIR" ] || { mkdir -p "$WORK_DIR"; log_message info "created directory ${BOLD}${WORK_DIR}${NORMAL}"; } || { log_message error "create $WORK_DIR failed"; exit 1; }
     # check there is enough free space on the disk device
     free_space=$( df -m "${WORK_DIR}" --output=avail | tail -1 )
     # trim whitespace
