@@ -25,6 +25,10 @@ SYSBENCH_TIME=300
 SYSBENCH_DELAY=30
 SYSBENCH_SKIP_CLEANUP=
 
+# globals
+LINUX_DISTRO='unknown'
+LINUX_RELEASE='unknown'
+
 usage() {
     # print command description & cmd line args
 
@@ -158,12 +162,50 @@ install_centos_epel_repo() {
     return 0
 }
 
+# shellcheck disable=1091
+# need to disable shellcheck for this fuction as it calls a source command for a file that might not exist (/etc/os-release)
+# see https://www.shellcheck.net/wiki/SC1091 
+get_linux_distro () {
+    # set global vars LINUX_DISTRO & LINUX_RELEASE to linux distro and release
+    # e.g. for ubuntu 18.04 LINUX_DISTRO=ubuntu & LINUX_REASE=18.04
+    # methods for detecting the linux distro vary depending on the distro
+
+    # the operatingsystem/linux.rb section of the puppet facter command is useful for seeing how to detect most linux distros
+    # https://github.com/puppetlabs/facter/blob/2301b06ef68ce6337d36dc48af3ba210ea8fa35d/lib/facter/operatingsystem/linux.rb
+    # note this is an older(ruby) version of the facter command.  It has since been ported to C++
+
+    # detect linux distro & release
+    if [ -x "$( command -v lsb_release )" ]; then
+        # if lsb_release is installed, use this command to get linux distro & release
+        # note lsb_release is not installed by default on most linux distros
+        log_message debug "using lsb_release to get linux distro information"
+        # get distro and convert to lowercase
+        LINUX_DISTRO=$( lsb_release --id --short | tr '[:upper:]' '[:lower:]' )
+        LINUX_RELEASE=$( lsb_release --release --short )
+    elif [ -e '/etc/os-release' ]; then
+        # most linux distros contain an os-release file
+        # seen man os-release for details
+        log_message debug "using /etc/os-release file to get linux distro information"
+        source /etc/os-release
+        LINUX_DISTRO=${ID}
+        LINUX_RELEASE=${VERSION_ID}
+    else
+        log_message debug "could not detect os distro"
+        LINUX_DISTRO='unknown'
+        LINUX_RELEASE='unknown'
+        return 1
+    fi
+
+    return 0
+}
+
+
 install_sysbench () {
     # install sysbench package for ubuntu or centos distros
 
-    # lsb (linux standard base) specifies an os-release file
-    LINUX_DISTRO=$( awk -F= '/^ID=/{print $2}' /etc/os-release | tr -d '"' )
+    get_linux_distro
     log_message info "linux distro is: ${BOLD}${LINUX_DISTRO}${NORMAL}"
+    log_message info "linux release is:  ${BOLD}${LINUX_RELEASE}${NORMAL}"
     if ! [ -x "$(command -v sysbench)" ]; then
         log_message info "installing sysbench command(requires sudo access).  you may be prompted for your password"
         case $LINUX_DISTRO in
