@@ -208,20 +208,22 @@ install_sysbench () {
     log_message info "linux release is:  ${BOLD}${LINUX_RELEASE}${NORMAL}"
     if ! [ -x "$(command -v sysbench)" ]; then
         log_message info "installing sysbench command(requires sudo access).  you may be prompted for your password"
+        check_sudo
+        SUDO=$?
+        if [ "$SUDO" -ne 0 ]; then
+            log_message error "sudo access is required to install the sysbench package"
+            exit 1
+        fi
+
         case $LINUX_DISTRO in
             ubuntu)
-                check_sudo
-                SUDO=$?
-                if [ "$SUDO" -ne 0 ]; then
-                    log_message error "sudo access is required to install the sysbench package"
-                    exit 1
-                fi
                 if ! sudo apt install sysbench -y > /dev/null 2>&1; then
                     log_message error "failed to install sysbench package"
                     exit 1
                 fi
                 ;;
             centos)
+                # epel repo is required for sysbench
                 install_centos_epel_repo
                 if ! sudo yum install -y sysbench > /dev/null 2>&1; then
                     log_message error "failed to install sysbench package"
