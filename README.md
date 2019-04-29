@@ -1,6 +1,21 @@
 # benchmark_io - An example command line bash script
 
-## Usage
+## Introduction
+
+This repo demonstrates how to test a bash command line (benchmark_io) tool using docker. 
+
+## benchmark_io usage
+
+The command line tool is located in ./src/scripts/benchmark_io.  There is a detailed description of how the bash script works in this blog entry:   
+https://www.peterstechblog.net/?p=1
+
+The script demostrate how to:
+
+- use bash functions & variables
+- log with tty colours
+- parse command line args
+- detect Linux distros
+- background a process and using a trap to stop the process if ^c is pressed
 
 The script should run on any recent Centos or Ubuntu distibution.
 
@@ -73,8 +88,6 @@ Removing network benchmark_io_default
 
 The script is tested using bats, shellcheck & docker.
 
-Blog entry for testing bash script: https://peterstechblog.net/p=TBC
-
 ### bats (Bash Automated Testing System) 
 
 https://github.com/sstephenson/bats
@@ -118,5 +131,4 @@ Create a directory and Dockerfile for each distro you want to test under ./src/d
 
 ## blog
 
-#TODO
-See https://www.peterstechblog.net/?p=1 for more information.
+https://www.peterstechblog.net
